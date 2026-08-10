@@ -1,7 +1,10 @@
-use super::InputExt;
-use bevy_app::{App, Plugin};
+use super::InputExtSystems;
+use bevy_app::{App, Plugin, PreUpdate};
 use bevy_asset::uuid::Uuid;
-use bevy_ecs::{change_detection::ResMut, message::MessageReader, resource::Resource};
+use bevy_ecs::{
+    change_detection::ResMut, message::MessageReader, resource::Resource,
+    schedule::IntoScheduleConfigs,
+};
 use bevy_input::{
     ButtonState,
     mouse::MouseButton,
@@ -10,12 +13,12 @@ use bevy_input::{
 };
 use bevy_picking::pointer::PointerId;
 
-pub(super) struct PointerOrderPlugin;
+pub struct PointerOrderPlugin;
 
 impl Plugin for PointerOrderPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PointerOrder>()
-            .add_systems(InputExt, track_pointer_order);
+            .add_systems(PreUpdate, track_pointer_order.in_set(InputExtSystems));
     }
 }
 
