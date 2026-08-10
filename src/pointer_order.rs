@@ -3,7 +3,7 @@ use bevy_app::{App, Plugin, PreUpdate};
 use bevy_asset::uuid::Uuid;
 use bevy_ecs::{
     change_detection::ResMut, message::MessageReader, resource::Resource,
-    schedule::IntoScheduleConfigs,
+    schedule::IntoScheduleConfigs, system::Local,
 };
 use bevy_input::{
     ButtonState,
@@ -26,20 +26,23 @@ fn track_pointer_order(
     mut pointer_order: ResMut<PointerOrder>,
     mut mouse_events: MessageReader<MouseButtonInput>,
     mut touch_events: MessageReader<TouchInput>,
+    mut pending_removals: Local<Vec<OrderedPointer>>,
 ) {
-    // Mouse
+    for pointer in pending_removals.drain(..) {
+        pointer_order.remove(pointer);
+    }
+
     for event in mouse_events.read() {
         match event.state {
             ButtonState::Pressed => {
                 pointer_order.add(event.button.into());
             }
             ButtonState::Released => {
-                pointer_order.remove(event.button.into());
+                pending_removals.push(event.button.into());
             }
         }
     }
 
-    // Touch
     for event in touch_events.read() {
         let pointer = OrderedPointer::Touch(event.id);
 
@@ -48,7 +51,7 @@ fn track_pointer_order(
                 pointer_order.add(pointer);
             }
             TouchPhase::Ended | TouchPhase::Canceled => {
-                pointer_order.remove(pointer);
+                pending_removals.push(pointer);
             }
             TouchPhase::Moved => (),
         }
