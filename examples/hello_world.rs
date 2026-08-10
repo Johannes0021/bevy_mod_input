@@ -10,17 +10,15 @@ fn main() {
 }
 
 fn print_pointer_order(pointer_order: Res<PointerOrder>) {
-    if !pointer_order.is_changed() {
-        return;
+    if pointer_order.is_changed() {
+        info!(
+            "Pointer order: [{}]",
+            pointer_order
+                .pointers()
+                .iter()
+                .map(|pointer| format!("{pointer:?}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
     }
-
-    info!(
-        "Pointer order: [{}]",
-        pointer_order
-            .pointers()
-            .iter()
-            .map(|pointer| format!("{pointer:?}"))
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
 }
