@@ -1,5 +1,5 @@
 use super::InputExtSystems;
-use bevy_app::{App, Plugin, PreUpdate};
+use bevy_app::{App, First, Plugin};
 use bevy_asset::uuid::Uuid;
 use bevy_ecs::{
     change_detection::ResMut, message::MessageReader, resource::Resource,
@@ -18,7 +18,7 @@ pub struct PointerOrderPlugin;
 impl Plugin for PointerOrderPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PointerOrder>()
-            .add_systems(PreUpdate, track_pointer_order.in_set(InputExtSystems));
+            .add_systems(First, track_pointer_order.in_set(InputExtSystems));
     }
 }
 
