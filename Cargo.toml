@@ -4,14 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy_app = "0.19.1"
-bevy_asset = "0.19.1"
-bevy_ecs = "0.19.1"
-bevy_input = "0.19.1"
-bevy_picking = "0.19.1"
+bevy_app = "0.20.0"
+bevy_asset = "0.20.0"
+bevy_ecs = "0.20.0"
+bevy_input = "0.20.0"
+bevy_picking = "0.20.0"
 
 [dev-dependencies]
-bevy = "0.19.1"
+bevy = "0.20.0"
 
 [[example]]
 name = "hello_world"
