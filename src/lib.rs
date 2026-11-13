@@ -1,23 +1,235 @@
-use bevy_app::{App, Plugin};
-use bevy_ecs::schedule::SystemSet;
-use pointer_order::PointerOrderPlugin;
+use bevy_app::{App, First, Plugin};
+use bevy_asset::uuid::Uuid;
+use bevy_ecs::{
+    change_detection::ResMut,
+    message::MessageReader,
+    resource::Resource,
+    schedule::{IntoScheduleConfigs, SystemSet},
+    system::Local,
+};
+use bevy_input::{
+    ButtonState,
+    mouse::MouseButton,
+    mouse::MouseButtonInput,
+    touch::{TouchInput, TouchPhase},
+};
+use bevy_picking::pointer::PointerId;
 
 pub mod prelude {
-    pub use super::{
-        InputExtPlugin, InputExtSystems,
-        pointer_order::{OrderedPointer, PointerOrder},
-    };
+    pub use super::{OrderedPointer, PointerOrder, PointerOrderPlugin, PointerOrderSystems};
 }
 
-pub mod pointer_order;
-
-pub struct InputExtPlugin;
-
 #[derive(SystemSet, Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct InputExtSystems;
+pub struct PointerOrderSystems;
 
-impl Plugin for InputExtPlugin {
+pub struct PointerOrderPlugin;
+
+impl Plugin for PointerOrderPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(PointerOrderPlugin);
+        app.init_resource::<PointerOrder>()
+            .add_systems(First, track_pointer_order.in_set(PointerOrderSystems));
+    }
+}
+
+fn track_pointer_order(
+    mut pointer_order: ResMut<PointerOrder>,
+    mut mouse_events: MessageReader<MouseButtonInput>,
+    mut touch_events: MessageReader<TouchInput>,
+    mut pending_removals: Local<Vec<OrderedPointer>>,
+) {
+    for pointer in pending_removals.drain(..) {
+        pointer_order.remove(pointer);
+    }
+
+    for event in mouse_events.read() {
+        match event.state {
+            ButtonState::Pressed => {
+                pointer_order.add(event.button.into());
+            }
+            ButtonState::Released => {
+                pending_removals.push(event.button.into());
+            }
+        }
+    }
+
+    for event in touch_events.read() {
+        let pointer = OrderedPointer::Touch(event.id);
+
+        match event.phase {
+            TouchPhase::Started => {
+                pointer_order.add(pointer);
+            }
+            TouchPhase::Ended | TouchPhase::Canceled => {
+                pending_removals.push(pointer);
+            }
+            TouchPhase::Moved => (),
+        }
+    }
+}
+
+//==================================================================================================
+// OrderedPointer
+//==================================================================================================
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub enum OrderedPointer {
+    Mouse(MouseButton),
+    Touch(u64),
+    Custom(Uuid),
+}
+
+impl From<MouseButton> for OrderedPointer {
+    fn from(button: MouseButton) -> Self {
+        Self::Mouse(button)
+    }
+}
+
+impl From<OrderedPointer> for PointerId {
+    fn from(pointer: OrderedPointer) -> Self {
+        match pointer {
+            OrderedPointer::Mouse(_) => Self::Mouse,
+            OrderedPointer::Touch(id) => Self::Touch(id),
+            OrderedPointer::Custom(uuid) => Self::Custom(uuid),
+        }
+    }
+}
+
+//==================================================================================================
+// PointerOrder
+//==================================================================================================
+
+#[derive(Resource, Debug, Clone, Eq, PartialEq, Hash)]
+pub struct PointerOrder {
+    pointers: Vec<Option<OrderedPointer>>,
+}
+
+impl Default for PointerOrder {
+    fn default() -> Self {
+        Self {
+            pointers: Vec::with_capacity(16),
+        }
+    }
+}
+
+impl PointerOrder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn add(&mut self, pointer: OrderedPointer) -> usize {
+        if let Some(index) = self.index_of(pointer) {
+            return index;
+        }
+
+        if let Some(index) = self.pointers.iter().position(Option::is_none) {
+            self.pointers[index] = Some(pointer);
+            return index;
+        }
+
+        let index = self.pointers.len();
+        self.pointers.push(Some(pointer));
+
+        index
+    }
+
+    pub fn remove(&mut self, pointer: OrderedPointer) -> Option<usize> {
+        let index = self.index_of(pointer)?;
+
+        self.pointers[index] = None;
+
+        Some(index)
+    }
+
+    pub fn get(&self, index: usize) -> Option<OrderedPointer> {
+        self.pointers.get(index).copied().flatten()
+    }
+
+    pub fn index_of(&self, pointer: OrderedPointer) -> Option<usize> {
+        self.pointers
+            .iter()
+            .position(|current| *current == Some(pointer))
+    }
+
+    pub fn indices_of_pointer_id(&self, pointer: PointerId) -> Vec<usize> {
+        match pointer {
+            PointerId::Mouse => self
+                .pointers
+                .iter()
+                .enumerate()
+                .filter_map(|(index, pointer)| {
+                    matches!(pointer, Some(OrderedPointer::Mouse(_))).then_some(index)
+                })
+                .collect(),
+
+            PointerId::Touch(id) => self
+                .index_of(OrderedPointer::Touch(id))
+                .map_or_else(Vec::new, |i| vec![i]),
+
+            PointerId::Custom(uuid) => self
+                .index_of(OrderedPointer::Custom(uuid))
+                .map_or_else(Vec::new, |i| vec![i]),
+        }
+    }
+
+    pub fn index_of_mouse(&self, button: MouseButton) -> Option<usize> {
+        self.index_of(OrderedPointer::Mouse(button))
+    }
+
+    pub fn index_of_touch(&self, id: u64) -> Option<usize> {
+        self.index_of(OrderedPointer::Touch(id))
+    }
+
+    pub fn index_of_custom(&self, uuid: Uuid) -> Option<usize> {
+        self.index_of(OrderedPointer::Custom(uuid))
+    }
+
+    pub fn is_at(&self, pointer: OrderedPointer, index: usize) -> bool {
+        self.get(index) == Some(pointer)
+    }
+
+    pub fn is_pointer_id_at(&self, pointer: PointerId, index: usize) -> bool {
+        match pointer {
+            PointerId::Mouse => {
+                matches!(self.get(index), Some(OrderedPointer::Mouse(_)))
+            }
+            PointerId::Touch(id) => self.get(index) == Some(OrderedPointer::Touch(id)),
+            PointerId::Custom(uuid) => self.get(index) == Some(OrderedPointer::Custom(uuid)),
+        }
+    }
+
+    pub fn is_mouse_at(&self, button: MouseButton, index: usize) -> bool {
+        self.get(index) == Some(OrderedPointer::Mouse(button))
+    }
+
+    pub fn is_touch_at(&self, id: u64, index: usize) -> bool {
+        self.get(index) == Some(OrderedPointer::Touch(id))
+    }
+
+    pub fn is_custom_at(&self, uuid: Uuid, index: usize) -> bool {
+        self.get(index) == Some(OrderedPointer::Custom(uuid))
+    }
+
+    pub fn pointers(&self) -> &[Option<OrderedPointer>] {
+        &self.pointers
+    }
+
+    pub fn contains(&self, pointer: OrderedPointer) -> bool {
+        self.index_of(pointer).is_some()
+    }
+
+    pub fn contains_pointer_id(&self, pointer: PointerId) -> bool {
+        !self.indices_of_pointer_id(pointer).is_empty()
+    }
+
+    pub fn contains_mouse(&self, button: MouseButton) -> bool {
+        self.index_of_mouse(button).is_some()
+    }
+
+    pub fn contains_touch(&self, id: u64) -> bool {
+        self.index_of_touch(id).is_some()
+    }
+
+    pub fn contains_custom(&self, uuid: Uuid) -> bool {
+        self.index_of_custom(uuid).is_some()
     }
 }
