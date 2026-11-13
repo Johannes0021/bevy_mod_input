@@ -1,18 +1,7 @@
-use bevy_app::{App, First, Plugin};
+use bevy_app::prelude::*;
 use bevy_asset::uuid::Uuid;
-use bevy_ecs::{
-    change_detection::ResMut,
-    message::MessageReader,
-    resource::Resource,
-    schedule::{IntoScheduleConfigs, SystemSet},
-    system::Local,
-};
-use bevy_input::{
-    ButtonState,
-    mouse::MouseButton,
-    mouse::MouseButtonInput,
-    touch::{TouchInput, TouchPhase},
-};
+use bevy_ecs::prelude::*;
+use bevy_input::{ButtonState, mouse::MouseButtonInput, prelude::*, touch::TouchPhase};
 use bevy_picking::pointer::PointerId;
 
 pub mod prelude {
